@@ -1,0 +1,46 @@
+Power up - looking for note reader (address 00110/30)?:
+Byte received: b'\x66' 011 00110
+Byte received: b'\xe6' 111 00110
+Byte received: b'\x00' 000 00000
+
+Byte received: b'\x66'
+Byte received: b'\xe6'
+Byte received: b'\x00'
+
+Byte received: b'\x66'
+Byte received: b'\xe6'
+Byte received: b'\x00'
+
+Byte received: b'\x66'
+Byte received: b'\xe6'
+Byte received: b'\x00'
+
+Byte received: b'\x66'
+Byte received: b'\xe6'
+Byte received: b'\x00'
+
+Power up - looking for ?:
+Byte received: b'\x3B' 001 11011 <- seems to be 'reserved for future standard peripherals'
+Byte received: b'\x7B' 011 11011
+Byte received: b'\x00' 000 00000
+
+Byte received: b'\x3B'
+Byte received: b'\x7B'
+Byte received: b'\x00'
+
+Byte received: b'\x3B'
+Byte received: b'\x7B'
+Byte received: b'\x00'
+
+Byte received: b'\x3B'
+Byte received: b'\x7B'
+Byte received: b'\x00'
+
+Byte received: b'\x3B'
+Byte received: b'\x7B'
+Byte received: b'\x00'
+
+Power up - looking for cashless?:
+Byte received: b'\x06' 000 00110
+Byte received: b'\x86' 100 00110
+Byte received: b'\x00' 000 00000
