@@ -1,5 +1,3 @@
-## TODO: clear out/redraw fees for machines properly.
-
 ## standard libraries
 import re
 import time
@@ -74,8 +72,8 @@ class Machine():
 ## Fee object
 class Fee():
     ## Initialise the fee object
-    def __init__(self, machine, name, amount, applied):
-        self.machine = machine
+    def __init__(self, actor, name, amount, applied):
+        self.actor = actor
         self.name = name            
         self.amount = amount
         self.applied = self.convert_name(applied)
@@ -102,7 +100,7 @@ class Fee():
             return None           
     
     ## Calculate the value of this fee object
-    def calculate(self):
+    def calculate(self, actor = None):
         ## Fee applications:
         ##  0: Fixed fee
         ##  1: Per cash sale
@@ -113,9 +111,12 @@ class Fee():
         ##  6: Total income (percent)
         ##  7: Total revenue (percent)
     
+        if actor == None:
+            actor = self.actor
+    
         ## Get the sales values
-        cash_sales_count, cash_sales_amount = self.machine.get_cash_sales()
-        card_sales_count, card_sales_amount = self.machine.get_card_sales()
+        cash_sales_count, cash_sales_amount = actor.get_cash_sales()
+        card_sales_count, card_sales_amount = actor.get_card_sales()
         total_sales_count = cash_sales_count + card_sales_count
         total_sales_count = cash_sales_count + card_sales_count
         total_sales_amount = cash_sales_amount + card_sales_amount
@@ -123,13 +124,15 @@ class Fee():
         ## Calculate the fee values
         if self.applied == 0:
             ## Fixed fee
-            try:
-                ## for ops, get the number of active machines
-                dtus = len(self.machine.get_machines(recursive = True, active_only = True))
-            except:
-                ## machines dont have get_machines, so the number will be one
+            if actor.type == 'operator':
+                ## for ops, get the number of active actors
+                dtus = len(actor.get_machines(recursive = True, active_only = True))
+            else:
+                ## machines dont have get_actors, so the number will be one
                 dtus = 1
             value = self.amount * dtus
+            
+            #print('DEBUG_FEE_CALC_DTU: Actor ' + str(actor.name) + ' (' + str(actor.type) + ') with ' + str(dtus) + ' DTUs has fee ' + str(value))
         elif self.applied == 1:
             ## Per cash sale
             value = self.amount * cash_sales_count
@@ -154,11 +157,11 @@ class Fee():
             ## This method will result in calculating all fees twice, but
             ## this is an acceptable compromise given the low
             ## computational cost and code complexity.
-            for fee in self.machine.fees:
+            for fee in self.actor.fees:
                 ## Exclude self
                 if fee != self:
                     ## Add together other fees
-                    other_fees += fee.calculate()
+                    other_fees += fee.calculate(actor = actor)
             
             ## work out revenue
             revenue = total_sales_amount - other_fees
@@ -167,7 +170,7 @@ class Fee():
             value = self.amount * (revenue / 100)
         else:
             raise ValueError('Unknown fee application: ' + str(self.applied))
-        
+               
         return value
                         
 ## Operator object for storing operator information
@@ -204,7 +207,7 @@ class Operator():
                 
                 ## if we are are recursive, go deeper
                 if recursive == True:
-                    children.extend(self.get_children(parent = operator.id, type = type, recursive = True))
+                    children.extend(self.get_children(parent = operator.id, type = type, recursive = True, active_only = active_only))
                     
         ## if we are looking for all or machines..
         if type == 'all' or type == 'machine':
@@ -213,7 +216,7 @@ class Operator():
                 ## if the machine has this one as a parent, add it to the list
                 if machine.parent == parent:
                     ## exclude inactive machines if specified
-                    if active_only == False or machine.active == True:
+                    if (active_only == True and machine.active == True) or active_only == False:
                         children.append(machine)
                     
         return children
@@ -935,7 +938,6 @@ class Nayax():
         
         return active_in_period   
             
-            
 ## GUI class
 class GUI():
     ## Class initialisation
@@ -1416,7 +1418,8 @@ class GUI():
             op_list = actor.get_operators(recursive = True)
             op_inactive = 0
             for op in op_list:
-                if op.active_now == False:
+                ## changed active_now to active so we get data for the specified period
+                if (op.active == None and op.active_now == False) or op.active == False:
                     op_inactive += 1
                     
             self.info_operator_operators.set(str(len(op_list) - op_inactive) + ' (plus ' + str(op_inactive) + ' inactive)')
@@ -1425,7 +1428,8 @@ class GUI():
             mac_list = actor.get_machines(recursive = True)
             mac_inactive = 0
             for mac in mac_list:
-                if mac.active_now == False:
+                ## changed active_now to active so we get data for the specified period
+                if (mac.active == None and mac.active_now == False) or mac.active == False:
                     mac_inactive += 1
             self.info_operator_machines.set(str(len(mac_list) - mac_inactive) + ' (plus ' + str(mac_inactive) + ' inactive)')
  
@@ -1692,7 +1696,12 @@ class GUI():
         self.start_date_entry.configure(state = 'normal')
         self.end_date_entry.configure(state = 'normal')
         self.sd_get_button.configure(state = 'normal')
+        
         self.root.update()
+        
+        ## This might have taken a while and the user isn't paying attention.
+        ## Tell the user we are done with a dialog
+        messagebox.showinfo('Sales data downloaded', 'Sales data has been downloaded for the specified period. Machines are now marked as active/inactive based on the specified period.')       
 
     ## creates the fee table section of the gui
     def create_fee_table(self):   
@@ -1760,26 +1769,33 @@ class GUI():
         ## we can't do anything if we dont know who it is
         if actor_id == None:
             messagebox.showerror('No selection', 'Select a machine or operator before trying to add new fees')
-            return
-    
-        ## make the fee object
-        fobj = Fee(actor_obj, name, amount, applied)
+            return        
         
         ## check if we're doing this to an operator. if so, target all machines
         ## under it
         targets = []
         if actor_obj.type == 'operator':
-            targets = actor_obj.get_machines(recursive = True)
+            targets = actor_obj.get_children(recursive = True)
             
         ## for machines, just do them. for ops, add them to the list
         targets.append(actor_obj)
                   
         ## add it to the fee list for all targets
         for actor_single in targets:
+            ## make the fee object. we need a new object for every actor to
+            ## ensure independent calculation
+            fobj = Fee(actor_obj, name, amount, applied)
+            ## add the fee to the actor object
             actor_single.fees.append(fobj)
         
         ## add it to the GUI
         self.add_fee_row(targets, fobj)
+        
+        ## clear out the input variables
+        self.f_name.set('')
+        self.f_amount.set('')
+        self.f_applied.set('')
+        self.root.update()
     
     ## remove a row from the fee table
     def remove_fee_row(self, obj_list, fee_obj, delrow):
@@ -1833,7 +1849,7 @@ class GUI():
         self.ft_row += 1
         
         ## put in the fee value then make it read only
-        ventry.insert(0, self.display_money(fee_obj.calculate()))
+        ventry.insert(0, self.display_money(fee_obj.calculate(actor = self.find_object_for_id(self.get_selection()))))
         ventry.configure(state = 'readonly')
                
         self.root.update()
@@ -1959,7 +1975,7 @@ class HTML():
                     for existing in overall_fees:
                         ## if it's existing, add the value of this one to it
                         if existing.compare(fee) == True:
-                            existing.value += fee.calculate()
+                            existing.value += fee.calculate(actor = actor)
                         ## if not, add it to the list
                         else:
                             overall_fees.append(fee)
