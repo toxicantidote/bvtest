@@ -11,9 +11,27 @@ import os
 import copy
 from multiprocessing.pool import ThreadPool
 
+## function to install modules from pip
+def install(package):
+    try:
+        from pip import main as pipmain
+    except:
+        from pip._internal import main as pipmain
+    pipmain(['install', package])
+
 ## non-standard libraries
-import requests
-from PIL import Image, ImageTk
+try:
+    import requests
+except:
+    print('It looks like you are missing the requests module. Installing it now. Please wait...')
+    install('requests')
+    import requests
+try:
+    from PIL import Image, ImageTk
+except:
+    print('It looks like you are missing the Python imaging library. Installing it now. Please wait...')
+    install('Pillow')
+    from PIL import Image, ImageTk
 
 ## number of workers for multithreaded requests
 worker_count = 20
@@ -54,7 +72,7 @@ class Machine():
             return False
     
     ## Returns cash sale count, amount
-    def get_cash_sales(self):        
+    def get_cash_sales(self):
         return self.sales['cash'][0], self.sales['cash'][1]
         
     ## Returns card sale count, amount
@@ -117,9 +135,15 @@ class Fee():
         ## Get the sales values
         cash_sales_count, cash_sales_amount = actor.get_cash_sales()
         card_sales_count, card_sales_amount = actor.get_card_sales()
-        total_sales_count = cash_sales_count + card_sales_count
-        total_sales_count = cash_sales_count + card_sales_count
-        total_sales_amount = cash_sales_amount + card_sales_amount
+        try:
+            total_sales_count = cash_sales_count + card_sales_count
+            total_sales_amount = cash_sales_amount + card_sales_amount
+            no_sales = False
+        except:
+            total_sales_count = total_sales_amount = 0
+            no_sales = True
+        
+        value = 0
         
         ## Calculate the fee values
         if self.applied == 0:
@@ -133,44 +157,46 @@ class Fee():
             value = self.amount * dtus
             
             #print('DEBUG_FEE_CALC_DTU: Actor ' + str(actor.name) + ' (' + str(actor.type) + ') with ' + str(dtus) + ' DTUs has fee ' + str(value))
-        elif self.applied == 1:
-            ## Per cash sale
-            value = self.amount * cash_sales_count
-        elif self.applied == 2:
-            ## Percent of cash sale value
-            value = self.amount * (cash_sales_amount / 100)
-        elif self.applied == 3:
-            ## Per card sale
-            value = self.amount * card_sales_count
-        elif self.applied == 4:
-            ## Percent of card sale value
-            value = self.amount * (card_sales_amount / 100)
-        elif self.applied == 5:
-            ## Per sale
-            value = self.amount * total_sales_count
-        elif self.applied == 6:
-            ## Percent of sale value
-            value = self.amount * (total_sales_amount / 100)
-        elif self.applied == 7:
-            other_fees = 0
-            ## Percent of total revenue (income after other fees).
-            ## This method will result in calculating all fees twice, but
-            ## this is an acceptable compromise given the low
-            ## computational cost and code complexity.
-            for fee in self.actor.fees:
-                ## Exclude self
-                if fee != self:
-                    ## Add together other fees
-                    other_fees += fee.calculate(actor = actor)
-            
-            ## work out revenue
-            revenue = total_sales_amount - other_fees
-            
-            ## apply the fee to revenue
-            value = self.amount * (revenue / 100)
-        else:
-            raise ValueError('Unknown fee application: ' + str(self.applied))
-               
+        elif no_sales == False:
+            if self.applied == 1:
+                ## Per cash sale
+                value = self.amount * cash_sales_count
+            elif self.applied == 2:
+                ## Percent of cash sale value
+                value = self.amount * (cash_sales_amount / 100)
+            elif self.applied == 3:
+                ## Per card sale
+                value = self.amount * card_sales_count
+            elif self.applied == 4:
+                ## Percent of card sale value
+                value = self.amount * (card_sales_amount / 100)
+            elif self.applied == 5:
+                ## Per sale
+                value = self.amount * total_sales_count
+            elif self.applied == 6:
+                ## Percent of sale value
+                value = self.amount * (total_sales_amount / 100)
+            elif self.applied == 7:
+                other_fees = 0
+                ## Percent of total revenue (income after other fees).
+                ## This method will result in calculating all fees twice, but
+                ## this is an acceptable compromise given the low
+                ## computational cost and code complexity.
+                for fee in self.actor.fees:
+                    ## Exclude self
+                    if fee != self:
+                        ## Add together other fees
+                        other_fees += fee.calculate(actor = actor)
+                
+                ## work out revenue
+                revenue = total_sales_amount - other_fees
+                
+                ## apply the fee to revenue
+                value = self.amount * (revenue / 100)
+        
+            else:
+                raise ValueError('Unknown fee application: ' + str(self.applied))
+        
         return value
                         
 ## Operator object for storing operator information
@@ -1196,7 +1222,10 @@ class GUI():
         
     ## round monetary values to two decimal points and add a dollar sign
     def display_money(self, value):
-        return '$' + str('{:,.2f}'.format(value))
+        if value == None:
+            return '$0'
+        else:
+            return '$' + str('{:,.2f}'.format(value))
         
     ## populate the treeview with machines and operators
     def draw_actor_list(self):
