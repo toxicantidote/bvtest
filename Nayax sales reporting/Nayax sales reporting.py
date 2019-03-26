@@ -1578,6 +1578,7 @@ class GUI():
         ## Export menu
         self.menu_export = Menu(self.menubar, tearoff = 0)
         self.menu_export.add_command(label = 'Export machine info to file', command = self.save_machine_info)
+        self.menu_export.add_command(label = 'Export sales data to file', command = self.save_machine_sales)
         self.menubar.add_cascade(label = 'Export', menu = self.menu_export)
         
         ## Product map menu
@@ -1882,8 +1883,7 @@ class GUI():
         ventry.configure(state = 'readonly')
                
         self.root.update()
-        
-        
+               
 ## Class for outputting information as HTML
 class HTML():
     ## Class initialisation. Pass it the Nayax object being used
@@ -1981,7 +1981,8 @@ class HTML():
         return html
         
     ## make a report for fees for the selected op/machine
-    def machine_sales_report(self, operator):        
+    def machine_sales_report(self, operator):
+        ## TODO: Break down the sales figures to machines properly
         html = self.header(title = 'Machine sales report')
     
         ## targets for info are the current actor and all descendents
@@ -2023,7 +2024,7 @@ class HTML():
         
         ## fees
         for fobj in overall_fees:
-            html += '<tr><td>' + fobj.name + '</td><td>' + fobj.applied + '</td><td>' + fobj.rate + '</td><td>-$' + fobj.value + '</td></tr>'
+            html += '<tr><td>' + str(fobj.name) + '</td><td>' + str(fobj.applied) + '</td><td>' + str(fobj.amount) + '</td><td>-$' + GUI().display_money(fobj.value) + '</td></tr>'
             
         ## take off cash sales - they took that
         html += '<tr><td>Cash taken by operator</td><td>&nbsp;</td><td>&nbsp;</td><td>$' + str(overall_cash_amount) + ' (' + str(overall_cash_count) + ' sales)</td></tr>'
