@@ -1578,7 +1578,8 @@ class GUI():
         ## Export menu
         self.menu_export = Menu(self.menubar, tearoff = 0)
         self.menu_export.add_command(label = 'Export machine info to file', command = self.save_machine_info)
-        self.menu_export.add_command(label = 'Export sales data to file', command = self.save_machine_sales)
+        self.menu_export.add_command(label = 'Export operator sales data to file', command = self.save_operator_sales)
+        self.menu_export.add_command(label = 'Export machine sales data to file', command = self.save_machine_sales)
         self.menubar.add_cascade(label = 'Export', menu = self.menu_export)
         
         ## Product map menu
@@ -1610,15 +1611,21 @@ class GUI():
         actor = self.find_object_for_id(self.get_selection())
         if actor == None:
             messagebox.showerror('No selection', 'Could not determine which actor was selected')
+            return
+            
         html = export.machine_info_report(actor)
         try:
             export.save_file(path, html)
             messagebox.showinfo('Machine info saved', 'Machine information saved to ' + str(path))
         except:
             messagebox.showerror('Save failed', 'Could not write to ' + str(path))
-            
+    
+    ## meta-function to make show sales show only operator sales
+    def save_operator_sales(self):
+        self.save_machine_sales(show_machines = False)
+    
     ## save machine sales/fees to a file
-    def save_machine_sales(self):
+    def save_machine_sales(self, show_machines = True):
         ## Get the path
         path = filedialog.asksaveasfilename(title = 'Export machine sales to', filetypes = (("Web page", "*.html"), ("All files","*.*")))
         
@@ -1636,7 +1643,9 @@ class GUI():
         actor = self.find_object_for_id(self.get_selection())
         if actor == None:
             messagebox.showerror('No selection', 'Could not determine which actor was selected')
-        html = export.machine_sales_report(actor)
+            return
+            
+        html = export.machine_sales_report(actor, show_machines = show_machines)
         try:
             export.save_file(path, html)
             messagebox.showinfo('Machine sales saved', 'Machine sales saved to ' + str(path))
@@ -1680,8 +1689,9 @@ class GUI():
         self.start_date_entry.grid(row = 0, column = 1)
         ttk.Label(self.frame_date, text = '  to  ').grid(row = 0, column = 2)
         self.end_date_entry = ttk.Entry(self.frame_date, textvariable = self.end_date)
+        self.end_date_entry.bind('<Return>', self.get_sales_data)
         self.end_date_entry.grid(row = 0, column = 3)
-        self.sd_get_button = ttk.Button(self.frame_date, text = 'Get sales data', command = self.get_sales_data)
+        self.sd_get_button = ttk.Button(self.frame_date, text = 'Get sales data', command = self.get_sales_data)        
         self.sd_get_button.grid(row = 0, column = 4)
         ttk.Label(self.frame_date, textvariable = self.status).grid(row = 0, column = 5, sticky = 'e')
         
@@ -1694,7 +1704,7 @@ class GUI():
         self.defaults_sd(force = True)
         
     ## Get the sales data
-    def get_sales_data(self):
+    def get_sales_data(self, event = None):
         ## get the values
         start_date = self.start_date.get()
         end_date = self.end_date.get()
@@ -1886,24 +1896,119 @@ class GUI():
                
 ## Class for outputting information as HTML
 class HTML():
-    ## Class initialisation. Pass it the Nayax object being used
-    def __init__(self, nayax):
-        self.nayax = nayax
+    ## Class initialisation. Pass it the GUI object being used
+    def __init__(self, gui):
+        self.gui = gui
     
     ## returns html header code
     def header(self, title):
         html = '<!DOCTYPE html>\n<html><head>\n<title>' + str(title) + '</title>'
         html += '<style type="text/css">\n'
-        html += 'table {border-collapse: collapse;}\n'
-        html += 'table tr * {border: 1px solid #000000;}\n'
-        html += 'body {font-family: Arial;}\n'
+        html += '''
+            table {border-collapse: collapse;}
+            table tr * {border: 1px solid #000000;}
+            body {font-family: Arial;}
+            ul, #rootUL {
+              list-style-type: none;
+            }
+            #rootUL {
+              margin: 0;
+              padding: 0;
+            }
+
+            .caret {
+              cursor: pointer;
+              -webkit-user-select: none; /* Safari 3.1+ */
+              -moz-user-select: none; /* Firefox 2+ */
+              -ms-user-select: none; /* IE 10+ */
+              user-select: none;
+            }
+
+            .caret::before {
+              content: "\\3e";
+              color: black;
+              display: inline-block;
+              margin-right: 6px;
+            }
+
+            .caret-down::before {
+              -ms-transform: rotate(90deg); /* IE 9 */
+              -webkit-transform: rotate(90deg); /* Safari */'
+              transform: rotate(90deg);  
+            }
+
+            .nested {
+              display: none;
+            }
+
+            .active {
+              display: block;
+              color: #ff0000;
+            }
+            #money {
+                fill: #3dc136;
+                opacity: 1.0;    
+            }
+            #product {
+                fill: #db9739;
+                opacity: 1.0;
+            }
+            #operator, #machine {
+                fill: #000000;
+            }
+            .show_button, .id_button {
+                width: 24px;
+                height: 24px;
+                border-radius: 5px;
+                transition: all 0.25s ease-in-out;
+                padding-left: 5px;
+            }
+            .show_button:hover {
+                background-color: #000000;
+                opacity: 0.6;
+            }
+            .salestable {
+                display: none;
+            }
+            .refundtotal td {
+                font-weight: bold;
+                background-color: #fcefc2;
+            }
+        '''
         html += '</style>'
+        html += '''
+            <script type="text/javascript">
+                function showSales(id) {
+                    var x = document.getElementsByClassName("salestable");
+                    for (i = 0; i < x.length; i++) {
+                        x[i].style.display = "none";
+                    }
+                    document.getElementById("sales-" + id).style.display = "block";
+                }
+            </script>
+        '''
         html += '</head><body>'
+        html += '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" style="display:none"><path id="money" d="M11.8 10.9c-2.27-.59-3-1.2-3-2.15 0-1.09 1.01-1.85 2.7-1.85 1.78 0 2.44.85 2.5 2.1h2.21c-.07-1.72-1.12-3.3-3.21-3.81V3h-3v2.16c-1.94.42-3.5 1.68-3.5 3.61 0 2.31 1.91 3.46 4.7 4.13 2.5.6 3 1.48 3 2.41 0 .69-.49 1.79-2.7 1.79-2.06 0-2.87-.92-2.98-2.1h-2.2c.12 2.19 1.76 3.42 3.68 3.83V21h3v-2.15c1.95-.37 3.5-1.5 3.5-3.55 0-2.84-2.43-3.81-4.7-4.4z"/><path d="M0 0h24v24H0z" fill="none"/></svg>'        
+        html += '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" style="display:none"><path id="machine" d="M19 5v14H5V5h14m1.1-2H3.9c-.5 0-.9.4-.9.9v16.2c0 .4.4.9.9.9h16.2c.4 0 .9-.5.9-.9V3.9c0-.5-.5-.9-.9-.9zM11 7h6v2h-6V7zm0 4h6v2h-6v-2zm0 4h6v2h-6zM7 7h2v2H7zm0 4h2v2H7zm0 4h2v2H7z"/><path fill="none" d="M0 0h24v24H0z"/></svg>'
+        html += '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" style="display:none"><path id="operator" d="M0 0h24v24H0z" fill="none"/><path d="M4 10v7h3v-7H4zm6 0v7h3v-7h-3zM2 22h19v-3H2v3zm14-12v7h3v-7h-3zm-4.5-9L2 6v2h19V6l-9.5-5z"/></svg>'
+
         return html
     
     ## returns html footer code
     def footer(self):
-        return '</body></html>'
+        return '''
+            <script>
+                var toggler = document.getElementsByClassName("caret");
+                var i;
+
+                for (i = 0; i < toggler.length; i++) {
+                  toggler[i].addEventListener("click", function() {
+                    this.parentElement.querySelector(".nested").classList.toggle("active");
+                    this.classList.toggle("caret-down");
+                  });
+                }
+            </script></body></html>
+        '''
     
     ## save a file
     def save_file(self, file_path, file_content):
@@ -1979,15 +2084,105 @@ class HTML():
         
         ## return the generated html
         return html
+
+    ## if something is None, make it zero
+    def none_to_zero_string(self, value):
+        if value == None:
+            return '0'
+        else:
+            return str(value)
         
-    ## make a report for fees for the selected op/machine
-    def machine_sales_report(self, operator):
-        ## TODO: Break down the sales figures to machines properly
-        html = self.header(title = 'Machine sales report')
+    ## make a tree showing the machines
+    def make_machine_tree(self, operator, child = False, show_machines = True):
+        self.gui.status.set('Exporting sales data - Creating tree: ' + str(operator.name))
+        self.gui.root.update()   
+        
+        if child == False:
+            html = '<ul id="rootUL">'
+            html += '<li><svg class="id_button"><use xlink:href="#operator"></svg><span class="caret">' + str(operator.name) + '</span><a href="#" onClick="showSales(\'' + str(operator.id) + '\')"><svg class="show_button"><use xlink:href="#money"></svg></a>'
+            html += self.make_machine_tree(operator, child = True)
+            html += '</ul></li>'
+        else:
+            html = ''
+        
+        ## ops
+        for sub_op in operator.get_operators():
+            html += '<li><svg class="id_button"><use xlink:href="#operator"></svg><span class="caret">' + str(sub_op.name) + '</span><a href="#" onClick="showSales(\'' + str(sub_op.id) + '\')"><svg class="show_button"><use xlink:href="#money"></svg></a><ul class="nested">'
+            html += self.make_machine_tree(sub_op, child = True)
+            html += '</ul></li>'
+            
+        ## machines
+        for machine in operator.get_machines():
+            html += '<li><svg class="id_button"><use xlink:href="#machine"></svg>' + str(machine.name)
+            ## TODO: Not obeying this properly. Needs to hide money icons if configured.
+            if show_machines == True:
+                html += '<a href="#" onClick="showSales(\'' + str(machine.id) + '\')"><svg class="show_button"><use xlink:href="#money"></svg></a>'
+            html += '</li>'
+        
+        if child == False:
+            html += '</ul>'
+        
+        return html
     
-        ## targets for info are the current actor and all descendents
+    ## make tables showing the sales data
+    def make_sales_table(self, operator, child = False, show_machines = True):
+        html = ''
         targets = [operator]
-        targets.extend(operator.get_children(recursive = True))
+        if show_machines == True:
+            targets.extend(operator.get_children(recursive = True))
+        else:
+            targets.extend(operator.get_operators(recursive = True))
+        
+        ## for each actor..
+        for op in targets:
+            self.gui.status.set('Exporting sales data  - Creating tables (' + str(targets.index(op)) + '/' + str(len(targets)) + '): ' + str(op.name))
+            self.gui.root.update()        
+            
+            ## make the table header
+            html += '<div class="salestable" id="sales-' + str(op.id) + '">'
+            html += '<h1>' + str(op.name) + '</h1>'
+            
+            html += '<table><tr><th>Description</th><th>Rate</th><th>Applied</th><th>Value</th></tr>'
+            
+            ## put in the overall sales
+            overall_cash_count, overall_cash_amount = op.get_cash_sales()
+            overall_card_count, overall_card_amount = op.get_card_sales()
+            
+            html += '<tr><td>Cash sales</td><td>&nbsp;</td><td>&nbsp;</td><td>+' + self.gui.display_money(overall_cash_amount) + ' (' + self.none_to_zero_string(overall_cash_count) + ' sales)</td></tr>'
+            html += '<tr><td>Card sales</td><td>&nbsp;</td><td>&nbsp;</td><td>+' + self.gui.display_money(overall_card_amount) + ' (' + self.none_to_zero_string(overall_card_count) + ' sales)</td></tr>'
+            
+            ## add the fee details
+            fee_total = 0
+            for fee in op.fees:
+                name = fee.name
+                amount = fee.amount
+                applied = fee.convert_name(fee.applied)
+                value_raw = fee.calculate(op)
+                value = self.gui.display_money(value_raw)
+                fee_total += value_raw
+                
+                html += '<tr><td>' + name + '</td><td>' + str(amount) + '</td><td>' + str(applied) + '</td><td>-' + self.gui.display_money(value) + '</td></tr>'
+                
+            ## take off the cash collected
+            html += '<tr><td>Cash collected by operator</td><td>&nbsp;</td><td>&nbsp;</td><td>-' + self.gui.display_money(overall_cash_amount) + '</td></tr>'
+            
+            ## work out the refund
+            html += '<tr class="refundtotal"><td>Refund</td><td>&nbsp;</td><td>&nbsp;</td><td>' 
+            if overall_card_amount == None:
+                html += '-' + self.gui.display_money(fee_total)
+            else:
+                refund = overall_card_amount - fee_total
+                self.gui.display_money(refund)
+            html += '</td></tr>'
+            
+            ## close the table
+            html += '</table></div>'
+            
+        return html
+    
+    ## make a report for fees for the selected op/machine
+    def machine_sales_report(self, operator, show_machines = True):
+        html = self.header(title = 'Sales report')
         
         ## create the overall variables
         overall_cash_count, overall_cash_amount = operator.get_cash_sales()
@@ -1995,44 +2190,14 @@ class HTML():
         overall_refund = 0
         overall_fees = []
         
-        ## work out the fees       
-        for actor in targets:
-            ## for ops
-            if actor.type == 'operator':
-                ## go through its fees
-                for fee in actor.fees:
-                    ## see if it is an existing fee
-                    for existing in overall_fees:
-                        ## if it's existing, add the value of this one to it
-                        if existing.compare(fee) == True:
-                            existing.value += fee.calculate(actor = actor)
-                        ## if not, add it to the list
-                        else:
-                            overall_fees.append(fee)
-            ## for machines
-            else:
-                overall_fees = copy.deepcopy(actor.fees)
-        
-        ## table head and summary
-        html += '<h1>' + str(actor.name) + '</h1>'
-        html += '<table>'
-        html += '<tr><th>Item</th><th>Applied</th><th>Rate</th><th>Value</th></tr>'
-        html += '<tr><td>Total sales</td><td>&nbsp;</td><td>&nbsp;</td><td>$' + str(overall_cash_amount + overall_card_amount) + ' (' + str(overall_cash_count + overall_card_count) + ' sales)</td></tr>'
-        html += '<tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>'
-        html += '<tr><td>Cash sales</td><td>&nbsp;</td><td>&nbsp;</td><td>$' + str(overall_cash_amount) + ' (' + str(overall_cash_count) + ' sales)</td></tr>'
-        html += '<tr><td>Card sales</td><td>&nbsp;</td><td>&nbsp;</td><td>$' + str(overall_card_amount) + ' (' + str(overall_card_count) + ' sales)</td></tr>'
-        
-        ## fees
-        for fobj in overall_fees:
-            html += '<tr><td>' + str(fobj.name) + '</td><td>' + str(fobj.applied) + '</td><td>' + str(fobj.amount) + '</td><td>-$' + GUI().display_money(fobj.value) + '</td></tr>'
-            
-        ## take off cash sales - they took that
-        html += '<tr><td>Cash taken by operator</td><td>&nbsp;</td><td>&nbsp;</td><td>$' + str(overall_cash_amount) + ' (' + str(overall_cash_count) + ' sales)</td></tr>'
-                
-        html += '</table>'
+        html += self.make_sales_table(operator, show_machines = show_machines)
+        html += self.make_machine_tree(operator, show_machines = show_machines)
         
         ## add the footer
         html += self.footer()
+        
+        self.gui.status.set('Exporting sales data  - Complete')
+        self.gui.root.update()   
         
         ## return the generated html
         return html
